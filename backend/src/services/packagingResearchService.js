@@ -24,23 +24,53 @@ class PackagingResearchService {
   }
 
   /**
-   * Analyze packaging for a list of products (with concurrency limit)
+   * Analyze packaging for a list of products — single Gemini batch call.
+   * Falls back to individual calls if batch fails.
    * @param {Array<{name: string, brand: string|null, category: string|null}>} products
    * @returns {Promise<PackagingInfo[]>}
    */
   async analyzePackagingBatch(products) {
-    const CONCURRENCY = 3;
-    const results = [];
+    this.initialize();
+    if (!products || products.length === 0) return [];
 
-    for (let i = 0; i < products.length; i += CONCURRENCY) {
-      const batch = products.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map((p) => this.analyzeProductPackaging(p))
-      );
-      results.push(...batchResults);
+    // Check cache first — only call Gemini for products not yet cached
+    const uncached = [];
+    const cachedResults = new Map();
+    for (const p of products) {
+      const key = `${p.brand || ''}_${p.name}`.toLowerCase();
+      if (this._cache.has(key)) {
+        cachedResults.set(key, this._cache.get(key));
+      } else {
+        uncached.push(p);
+      }
     }
 
-    return results;
+    let freshResults = [];
+    if (uncached.length > 0) {
+      try {
+        console.log(`📦 Batch packaging analysis for ${uncached.length} products (single Gemini call)`);
+        freshResults = await this._askGeminiPackagingBatch(uncached);
+        // Store in cache
+        freshResults.forEach((r, i) => {
+          const key = `${uncached[i].brand || ''}_${uncached[i].name}`.toLowerCase();
+          this._cache.set(key, r);
+        });
+      } catch (err) {
+        console.warn('⚠️ Batch Gemini call failed, falling back to individual calls:', err.message);
+        const CONCURRENCY = 3;
+        for (let i = 0; i < uncached.length; i += CONCURRENCY) {
+          const slice = uncached.slice(i, i + CONCURRENCY);
+          const r = await Promise.all(slice.map((p) => this.analyzeProductPackaging(p)));
+          freshResults.push(...r);
+        }
+      }
+    }
+
+    // Reconstruct in original order
+    return products.map((p) => {
+      const key = `${p.brand || ''}_${p.name}`.toLowerCase();
+      return cachedResults.get(key) || freshResults.find((r) => r.productName === p.name) || this._fallback(p);
+    });
   }
 
   /**
@@ -97,6 +127,118 @@ class PackagingResearchService {
     ];
   }
 
+  /**
+   * Single Gemini call for ALL products — much faster than N individual calls
+   */
+  async _askGeminiPackagingBatch(products) {
+    const productList = products
+      .map((p, i) => `${i + 1}. "${p.name}"${p.brand ? ` (marca: ${p.brand})` : ''}${p.category ? ` [${p.category}]` : ''}`)
+      .join('\n');
+
+    const prompt = `Sei un esperto di sostenibilità e packaging alimentare.
+Analizza il packaging tipico di ciascuno dei seguenti prodotti e fornisci stime di impatto ambientale.
+
+PRODOTTI:
+${productList}
+
+Rispondi SOLO con un array JSON valido, un oggetto per prodotto nello stesso ordine:
+[
+  {
+    "productName": "nome prodotto",
+    "primaryPackagingMaterial": "plastica|carta|vetro|alluminio|cartone|tetrapack|misto",
+    "packagingDescription": "descrizione breve",
+    "totalPackagingWeightGrams": 0,
+    "plasticGrams": 0,
+    "recyclablePlasticGrams": 0,
+    "nonRecyclablePlasticGrams": 0,
+    "cardboardGrams": 0,
+    "glassGrams": 0,
+    "aluminumGrams": 0,
+    "otherMaterialGrams": 0,
+    "isFullyRecyclable": false,
+    "recyclabilityScore": 0,
+    "recyclabilityLabel": "ottimo|buono|sufficiente|scarso|pessimo",
+    "plasticTypes": [],
+    "recyclingInstructions": "come smaltire",
+    "co2PackagingKg": 0.0,
+    "dataConfidence": 0.8,
+    "environmentalNotes": "note"
+  }
+]
+SCALA recyclabilityScore: 0=non riciclabile, 100=completamente riciclabile
+I valori in grammi sono STIME tipiche per una singola confezione.`;
+
+    const result = await this.model.generateContent([prompt]);
+    const text = result.response.text();
+    console.log('📦 Batch packaging raw (first 400):', text.substring(0, 400));
+
+    const arrMatch = text.match(/\[[\s\S]*\]/);
+    if (!arrMatch) throw new Error('No JSON array in batch response');
+
+    const parsed = JSON.parse(arrMatch[0]);
+    if (!Array.isArray(parsed)) throw new Error('Response is not an array');
+
+    return parsed.map((item, i) => this._normalizePackagingItem(item, products[i]));
+  }
+
+  _normalizePackagingItem(parsed, product) {
+    return {
+      productName: product.name,
+      brand: product.brand || null,
+      category: product.category || null,
+      primaryPackagingMaterial: parsed.primaryPackagingMaterial || 'misto',
+      secondaryPackagingMaterial: parsed.secondaryPackagingMaterial || null,
+      packagingDescription: parsed.packagingDescription || null,
+      totalPackagingWeightGrams: parsed.totalPackagingWeightGrams || 0,
+      plasticGrams: parsed.plasticGrams || 0,
+      recyclablePlasticGrams: parsed.recyclablePlasticGrams || 0,
+      nonRecyclablePlasticGrams: parsed.nonRecyclablePlasticGrams || 0,
+      cardboardGrams: parsed.cardboardGrams || 0,
+      glassGrams: parsed.glassGrams || 0,
+      aluminumGrams: parsed.aluminumGrams || 0,
+      otherMaterialGrams: parsed.otherMaterialGrams || 0,
+      isFullyRecyclable: parsed.isFullyRecyclable || false,
+      recyclabilityScore: parsed.recyclabilityScore || 0,
+      recyclabilityLabel: parsed.recyclabilityLabel || 'sconosciuto',
+      plasticTypes: parsed.plasticTypes || [],
+      recyclingInstructions: parsed.recyclingInstructions || null,
+      co2PackagingKg: parsed.co2PackagingKg || 0,
+      certifications: parsed.certifications || [],
+      environmentalNotes: parsed.environmentalNotes || null,
+      dataConfidence: parsed.dataConfidence || 0.7,
+      dataSource: 'gemini_batch',
+    };
+  }
+
+  _fallback(product) {
+    return {
+      productName: product.name,
+      brand: product.brand || null,
+      category: product.category || null,
+      primaryPackagingMaterial: 'sconosciuto',
+      secondaryPackagingMaterial: null,
+      packagingDescription: null,
+      totalPackagingWeightGrams: 0,
+      plasticGrams: 0,
+      recyclablePlasticGrams: 0,
+      nonRecyclablePlasticGrams: 0,
+      cardboardGrams: 0,
+      glassGrams: 0,
+      aluminumGrams: 0,
+      otherMaterialGrams: 0,
+      isFullyRecyclable: false,
+      recyclabilityScore: 0,
+      recyclabilityLabel: 'sconosciuto',
+      plasticTypes: [],
+      recyclingInstructions: null,
+      co2PackagingKg: 0,
+      certifications: [],
+      environmentalNotes: 'Analisi non disponibile',
+      dataConfidence: 0,
+      dataSource: 'error',
+    };
+  }
+
   async _askGeminiPackaging(product, searchContext) {
     const prompt = `Sei un esperto di sostenibilità e packaging alimentare.
 
@@ -147,61 +289,10 @@ I valori in grammi sono STIME tipiche per un singolo pezzo/confezione del prodot
       if (!jsonMatch) throw new Error('No JSON in response');
 
       const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        productName: product.name,
-        brand: product.brand || null,
-        category: product.category || null,
-        primaryPackagingMaterial: parsed.primaryPackagingMaterial || 'misto',
-        secondaryPackagingMaterial: parsed.secondaryPackagingMaterial || null,
-        packagingDescription: parsed.packagingDescription || null,
-        totalPackagingWeightGrams: parsed.totalPackagingWeightGrams || 0,
-        plasticGrams: parsed.plasticGrams || 0,
-        recyclablePlasticGrams: parsed.recyclablePlasticGrams || 0,
-        nonRecyclablePlasticGrams: parsed.nonRecyclablePlasticGrams || 0,
-        cardboardGrams: parsed.cardboardGrams || 0,
-        glassGrams: parsed.glassGrams || 0,
-        aluminumGrams: parsed.aluminumGrams || 0,
-        otherMaterialGrams: parsed.otherMaterialGrams || 0,
-        isFullyRecyclable: parsed.isFullyRecyclable || false,
-        recyclabilityScore: parsed.recyclabilityScore || 0,
-        recyclabilityLabel: parsed.recyclabilityLabel || 'sconosciuto',
-        plasticTypes: parsed.plasticTypes || [],
-        recyclingInstructions: parsed.recyclingInstructions || null,
-        co2PackagingKg: parsed.co2PackagingKg || 0,
-        certifications: parsed.certifications || [],
-        environmentalNotes: parsed.environmentalNotes || null,
-        dataConfidence: parsed.dataConfidence || 0.5,
-        dataSource: parsed.dataSource || 'gemini_knowledge',
-      };
+      return this._normalizePackagingItem(parsed, product);
     } catch (err) {
       console.error(`❌ Gemini packaging failed for "${product.name}":`, err.message);
-      // Return fallback with zeros
-      return {
-        productName: product.name,
-        brand: product.brand || null,
-        category: product.category || null,
-        primaryPackagingMaterial: 'sconosciuto',
-        secondaryPackagingMaterial: null,
-        packagingDescription: null,
-        totalPackagingWeightGrams: 0,
-        plasticGrams: 0,
-        recyclablePlasticGrams: 0,
-        nonRecyclablePlasticGrams: 0,
-        cardboardGrams: 0,
-        glassGrams: 0,
-        aluminumGrams: 0,
-        otherMaterialGrams: 0,
-        isFullyRecyclable: false,
-        recyclabilityScore: 0,
-        recyclabilityLabel: 'sconosciuto',
-        plasticTypes: [],
-        recyclingInstructions: null,
-        co2PackagingKg: 0,
-        certifications: [],
-        environmentalNotes: 'Analisi non disponibile',
-        dataConfidence: 0,
-        dataSource: 'error',
-      };
+      return this._fallback(product);
     }
   }
 }
