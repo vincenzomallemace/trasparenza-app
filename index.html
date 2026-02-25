@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confronta Prodotti Supermercato</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛒 Confronta Prodotti Supermercato</h1>
+            <p class="subtitle">Trova il miglior prezzo per i tuoi prodotti</p>
+        </header>
+
+        <div class="add-product-section">
+            <h2>Aggiungi Prodotto</h2>
+            <form id="productForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="productName">Nome Prodotto</label>
+                        <input type="text" id="productName" required placeholder="es. Pasta Barilla">
+                    </div>
+                    <div class="form-group">
+                        <label for="supermarket">Supermercato</label>
+                        <input type="text" id="supermarket" required placeholder="es. Conad">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="price">Prezzo (€)</label>
+                        <input type="number" id="price" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="quantity">Quantità</label>
+                        <input type="number" id="quantity" step="0.01" required placeholder="500">
+                    </div>
+                    <div class="form-group">
+                        <label for="unit">Unità</label>
+                        <select id="unit" required>
+                            <option value="g">grammi (g)</option>
+                            <option value="kg">chilogrammi (kg)</option>
+                            <option value="ml">millilitri (ml)</option>
+                            <option value="l">litri (l)</option>
+                            <option value="pz">pezzi (pz)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary">Aggiungi Prodotto</button>
+            </form>
+        </div>
+
+        <div class="comparison-section">
+            <div class="section-header">
+                <h2>Prodotti Confrontati</h2>
+                <div class="actions">
+                    <button id="clearAll" class="btn-secondary">Cancella Tutto</button>
+                </div>
+            </div>
+            
+            <div id="emptyState" class="empty-state">
+                <p>📦 Nessun prodotto aggiunto ancora</p>
+                <p class="empty-subtitle">Aggiungi prodotti per iniziare il confronto</p>
+            </div>
+
+            <div id="productsTable" class="products-table" style="display: none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Prodotto</th>
+                            <th>Supermercato</th>
+                            <th>Prezzo</th>
+                            <th>Quantità</th>
+                            <th>Prezzo/Unità</th>
+                            <th>Convenienza</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="stats-section" id="statsSection" style="display: none;">
+            <h2>Statistiche</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalProducts">0</div>
+                    <div class="stat-label">Prodotti Totali</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="bestDeal">-</div>
+                    <div class="stat-label">Miglior Affare</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgPrice">€0.00</div>
+                    <div class="stat-label">Prezzo Medio</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

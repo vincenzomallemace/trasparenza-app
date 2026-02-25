@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trasparenza</string>
+    <string name="scanner_tab">Scanner</string>
+    <string name="saved_tab">Salvati</string>
+    <string name="scan_button">Scansiona</string>
+    <string name="save_button">Salva</string>
+    <string name="close_button">Chiudi</string>
+    <string name="delete_button">Elimina</string>
+    <string name="cancel_button">Annulla</string>
+    <string name="loading">Analisi in corso...</string>
+    <string name="error_generic">Si è verificato un errore</string>
+    <string name="error_camera">Errore fotocamera</string>
+    <string name="error_network">Errore di rete</string>
+    <string name="no_saved_products">Nessun prodotto salvato</string>
+    <string name="scan_hint">Scansiona prodotti per salvarli qui</string>
+    <string name="product_saved">Prodotto salvato!</string>
+    <string name="product_deleted">Prodotto eliminato</string>
+    <string name="confirm_delete_title">Conferma eliminazione</string>
+    <string name="confirm_delete_message">Vuoi eliminare questo prodotto dai salvati?</string>
+    <string name="camera_permission_required">Permesso fotocamera richiesto</string>
+    <string name="camera_permission_rationale">L\'app ha bisogno del permesso fotocamera per scansionare i prodotti</string>
+</resources>
+

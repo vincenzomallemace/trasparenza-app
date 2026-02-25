@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and fill in values before running terraform apply
+# NEVER commit terraform.tfvars to git (it contains secrets)
+
+project_name     = "trasparenza-app"
+environment_name = "production"
+service_name     = "trasparenza-backend"
+node_env         = "production"
+
+# Google Gemini
+gemini_api_key = "YOUR_GEMINI_API_KEY"
+
+# Google APIs (for Search / Knowledge Graph)
+google_api_key = "YOUR_GOOGLE_API_KEY"
+google_cse_id  = "YOUR_CUSTOM_SEARCH_ENGINE_ID"
+
+# Google Vision Service Account JSON (paste the entire JSON as one line, escaped)
+# Leave empty if not using Vision API fallback
+google_application_credentials_json = ""
