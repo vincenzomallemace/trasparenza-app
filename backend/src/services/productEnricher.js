@@ -42,9 +42,15 @@ class ProductEnricher {
       return this.formatGeminiResult(enrichedData);
     }
 
-    // FALLBACK: Vision API + Search
-    console.log('⚠️ Gemini failed, falling back to Vision API...');
-    return this.fallbackAnalysis(imageData);
+    // FALLBACK: Vision API + Search — only if GOOGLE_APPLICATION_CREDENTIALS is set
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log('⚠️ Gemini failed, falling back to Vision API...');
+      return this.fallbackAnalysis(imageData);
+    }
+
+    // No credentials for Vision API — return empty but valid result to avoid crash
+    console.warn('⚠️ Gemini failed and Vision API credentials not configured. Returning empty result.');
+    return this.formatGeminiResult({});
   }
 
   /**

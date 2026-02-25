@@ -7,9 +7,16 @@ const vision = require('@google-cloud/vision');
 
 class VisionService {
   constructor() {
-    // Initialize Vision client
-    // Uses GOOGLE_APPLICATION_CREDENTIALS env var for authentication
-    this.client = new vision.ImageAnnotatorClient();
+    // Defer client initialization to first actual use to avoid
+    // unhandled gRPC credential-discovery rejections at startup
+    this.client = null;
+  }
+
+  _getClient() {
+    if (!this.client) {
+      this.client = new vision.ImageAnnotatorClient();
+    }
+    return this.client;
   }
 
   /**
@@ -34,7 +41,7 @@ class VisionService {
         ]
       };
 
-      const [result] = await this.client.annotateImage(request);
+      const [result] = await this._getClient().annotateImage(request);
       return this.parseResults(result);
 
     } catch (error) {

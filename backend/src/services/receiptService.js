@@ -23,27 +23,27 @@ class ReceiptService {
 
   /**
    * Analyze a receipt and return structured product list
-   * @param {Buffer|string} data - Image buffer, base64 string, or PDF buffer
+   * @param {Buffer|string} data - Image buffer, base64 string, or PDF buffer/base64
    * @param {string} mimeType - 'image/jpeg'|'image/png'|'application/pdf'|'video/mp4'
    * @returns {Promise<ReceiptAnalysisResult>}
    */
   async analyzeReceipt(data, mimeType = 'image/jpeg') {
     this.initialize();
 
-    // If PDF, extract text first then analyze
-    if (mimeType === 'application/pdf') {
-      return this._analyzePdfReceipt(data);
-    }
-
-    // For images and video frames: use multimodal Gemini
+    // Normalize data to base64 string regardless of input type
     let base64Data;
     if (Buffer.isBuffer(data)) {
       base64Data = data.toString('base64');
     } else if (typeof data === 'string') {
+      // Strip data URI prefix if present (e.g. "data:application/pdf;base64,...")
       base64Data = data.replace(/^data:[^;]+;base64,/, '');
     } else {
       throw new Error('Invalid data format');
     }
+
+    // Gemini 2.5 Flash supports image/jpeg, image/png, application/pdf as inlineData.
+    // For video frames we already extract a JPEG frame before calling this method.
+    const geminiMimeType = mimeType.startsWith('video') ? 'image/jpeg' : mimeType;
 
     const prompt = this._buildReceiptPrompt();
 
@@ -52,7 +52,7 @@ class ReceiptService {
         prompt,
         {
           inlineData: {
-            mimeType: mimeType.startsWith('video') ? 'image/jpeg' : mimeType,
+            mimeType: geminiMimeType,
             data: base64Data,
           },
         },
@@ -62,39 +62,7 @@ class ReceiptService {
       console.log('🧾 Gemini receipt raw response:', text.substring(0, 300));
       return this._parseReceiptResponse(text);
     } catch (err) {
-      console.error('❌ Gemini receipt analysis failed:', err.message);
-      throw err;
-    }
-  }
-
-  /**
-   * Analyze PDF receipt by extracting text first
-   */
-  async _analyzePdfReceipt(pdfBuffer) {
-    this.initialize();
-    let pdfText = '';
-    try {
-      const pdfData = await pdfParse(pdfBuffer);
-      pdfText = pdfData.text;
-    } catch (err) {
-      console.warn('⚠️ pdf-parse failed, using raw buffer:', err.message);
-      pdfText = pdfBuffer.toString('utf-8');
-    }
-
-    const prompt = `Sei un assistente che analizza scontrini. Leggi il seguente testo estratto da uno scontrino PDF e fornisci le informazioni in JSON.
-
-TESTO SCONTRINO:
-${pdfText}
-
-${this._buildReceiptJsonSchema()}`;
-
-    try {
-      const result = await this.model.generateContent([prompt]);
-      const text = result.response.text();
-      console.log('📄 Gemini PDF receipt raw:', text.substring(0, 300));
-      return this._parseReceiptResponse(text);
-    } catch (err) {
-      console.error('❌ Gemini PDF analysis failed:', err.message);
+      console.error('❌ Gemini receipt analysis failed:', err);
       throw err;
     }
   }
