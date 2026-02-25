@@ -8,8 +8,8 @@ import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.trasparenza.app.data.api.AnalyzeReceiptRequest
 import com.trasparenza.app.data.api.ApiService
+import com.trasparenza.app.data.model.AnalyzeReceiptRequest
 import com.trasparenza.app.data.model.ReceiptData
 import com.trasparenza.app.data.model.SustainabilityReport
 import com.trasparenza.app.data.model.SustainabilityReportRequest
