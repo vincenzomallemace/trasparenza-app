@@ -1,6 +1,8 @@
 /**
  * Receipt Service
- * Uses Gemini Vision to extract product list from a receipt (image, PDF, video frame)
+ * Two-step architecture:
+ *   Step 1 — Static OCR: pdf-parse (PDF) or Gemini Vision text extraction (image)
+ *   Step 2 — Gemini text-only: structured JSON parsing of the extracted plain text
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -22,57 +24,103 @@ class ReceiptService {
   }
 
   /**
-   * Analyze a receipt and return structured product list
-   * @param {Buffer|string} data - Image buffer, base64 string, or PDF buffer/base64
+   * Analyze a receipt and return structured product list.
+   * @param {Buffer|string} data - base64 string or Buffer
    * @param {string} mimeType - 'image/jpeg'|'image/png'|'application/pdf'|'video/mp4'
-   * @returns {Promise<ReceiptAnalysisResult>}
    */
   async analyzeReceipt(data, mimeType = 'image/jpeg') {
     this.initialize();
 
-    // Normalize data to base64 string regardless of input type
-    let base64Data;
+    // --- Normalize to Buffer ---
+    let buffer;
     if (Buffer.isBuffer(data)) {
-      base64Data = data.toString('base64');
+      buffer = data;
     } else if (typeof data === 'string') {
-      // Strip data URI prefix if present (e.g. "data:application/pdf;base64,...")
-      base64Data = data.replace(/^data:[^;]+;base64,/, '');
+      const raw = data.replace(/^data:[^;]+;base64,/, '');
+      buffer = Buffer.from(raw, 'base64');
     } else {
-      throw new Error('Invalid data format');
+      throw new Error('Invalid data format: expected Buffer or base64 string');
     }
 
-    // Gemini 2.5 Flash supports image/jpeg, image/png, application/pdf as inlineData.
-    // For video frames we already extract a JPEG frame before calling this method.
-    const geminiMimeType = mimeType.startsWith('video') ? 'image/jpeg' : mimeType;
+    // STEP 1: Static OCR → plain text
+    const rawText = await this._extractText(buffer, mimeType);
+    console.log('📝 OCR extracted text (first 500):', rawText.substring(0, 500));
 
-    const prompt = this._buildReceiptPrompt();
+    if (!rawText || rawText.trim().length < 10) {
+      throw new Error('OCR produced no readable text from the receipt');
+    }
 
+    // STEP 2: Gemini text-only → structured JSON
+    return this._parseTextWithGemini(rawText);
+  }
+
+  /**
+   * STEP 1 — Extract plain text from the receipt.
+   * PDF  → pdf-parse (fast, deterministic, no AI credits)
+   * Image/Video frame → Gemini Vision OCR-only prompt (ask only for raw text)
+   */
+  async _extractText(buffer, mimeType) {
+    if (mimeType === 'application/pdf') {
+      return this._ocrPdf(buffer);
+    }
+    // Images (jpeg, png) and video frames
+    const imageMime = mimeType.startsWith('video') ? 'image/jpeg' : mimeType;
+    return this._ocrImage(buffer, imageMime);
+  }
+
+  async _ocrPdf(buffer) {
+    try {
+      const result = await pdfParse(buffer);
+      const text = result.text || '';
+      console.log(`📄 pdf-parse extracted ${text.length} chars`);
+      return text;
+    } catch (err) {
+      console.warn('⚠️ pdf-parse failed:', err.message);
+      // Last-resort: decode buffer as UTF-8 (works for text-based receipts)
+      return buffer.toString('utf-8').replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ');
+    }
+  }
+
+  async _ocrImage(buffer, mimeType) {
+    const base64 = buffer.toString('base64');
+    const ocrPrompt =
+      'You are an OCR engine. Transcribe ALL text visible in this receipt image ' +
+      'exactly as it appears, line by line. Do NOT interpret or summarize — just output the raw text.';
     try {
       const result = await this.model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            mimeType: geminiMimeType,
-            data: base64Data,
-          },
-        },
+        ocrPrompt,
+        { inlineData: { mimeType, data: base64 } },
       ]);
-
-      const text = result.response.text();
-      console.log('🧾 Gemini receipt raw response:', text.substring(0, 300));
-      return this._parseReceiptResponse(text);
+      return result.response.text();
     } catch (err) {
-      console.error('❌ Gemini receipt analysis failed:', err);
+      console.error('❌ Gemini OCR step failed:', err.message);
       throw err;
     }
   }
 
-  _buildReceiptPrompt() {
-    return `Sei un assistente che analizza scontrini. Analizza questa immagine di uno scontrino e fornisci le informazioni in formato JSON.
+  /**
+   * STEP 2 — Parse plain text into structured receipt JSON using Gemini (text-only).
+   */
+  async _parseTextWithGemini(rawText) {
+    const prompt = `Sei un assistente che analizza scontrini della spesa italiani.
+Leggi il seguente testo estratto da uno scontrino e restituisci le informazioni strutturate.
 
-Estrai tutti i prodotti acquistati con il massimo dettaglio possibile.
+TESTO SCONTRINO:
+\`\`\`
+${rawText}
+\`\`\`
 
 ${this._buildReceiptJsonSchema()}`;
+
+    try {
+      const result = await this.model.generateContent([prompt]);
+      const text = result.response.text();
+      console.log('🧾 Gemini parse raw response (first 400):', text.substring(0, 400));
+      return this._parseReceiptResponse(text);
+    } catch (err) {
+      console.error('❌ Gemini parse step failed:', err);
+      throw err;
+    }
   }
 
   _buildReceiptJsonSchema() {
@@ -107,10 +155,16 @@ ${this._buildReceiptJsonSchema()}`;
   }
 
   _parseReceiptResponse(text) {
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Gemini sometimes wraps JSON in ```json ... ``` — strip those first
+    let cleaned = text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    // Extract the outermost JSON object
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('No valid JSON in Gemini receipt response');
+      throw new Error(`No JSON object found in Gemini response. Raw: ${text.substring(0, 200)}`);
     }
 
     try {
