@@ -21,7 +21,7 @@ android {
         
         // Backend URL - use your Mac's local IP for testing on physical device
         // For emulator use: "http://10.0.2.2:3000/api/"
-        buildConfigField("String", "API_BASE_URL", "\"https://submicroscopic-uneddied-eduardo.ngrok-free.dev/api/\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://trasparenza-backend-production.up.railway.app/api/\"")
     }
 
     buildTypes {
