@@ -66,9 +66,9 @@ class PackagingResearchService {
     // Try to get web context via search
     for (const query of queries) {
       try {
-        const searchResults = await searchService.search(query);
-        if (searchResults && searchResults.length > 0) {
-          searchContext += searchResults
+        const searchResults = await searchService.searchBrandInfo(query);
+        if (searchResults && searchResults.items && searchResults.items.length > 0) {
+          searchContext += searchResults.items
             .slice(0, 3)
             .map((r) => `${r.title}: ${r.snippet}`)
             .join('\n');
