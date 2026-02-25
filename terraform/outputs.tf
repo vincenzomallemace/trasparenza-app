@@ -1,19 +1,19 @@
-output "project_id" {
-  description = "Railway project ID"
-  value       = railway_project.trasparenza.id
+output "project_name" {
+  description = "Railway project name"
+  value       = var.project_name
 }
 
-output "service_id" {
-  description = "Railway backend service ID"
-  value       = railway_service.backend.id
-}
-
-output "environment_id" {
-  description = "Railway production environment ID"
-  value       = railway_environment.production.id
+output "service_name" {
+  description = "Railway service name"
+  value       = var.service_name
 }
 
 output "railway_dashboard_url" {
-  description = "Railway project dashboard URL"
-  value       = "https://railway.app/project/${railway_project.trasparenza.id}"
+  description = "Railway dashboard URL"
+  value       = "https://railway.app/dashboard"
+}
+
+output "deploy_instructions" {
+  description = "How to get the deployed URL"
+  value       = "After deploy: cd backend && RAILWAY_TOKEN=<token> railway domain"
 }

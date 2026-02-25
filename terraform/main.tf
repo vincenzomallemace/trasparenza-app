@@ -2,23 +2,20 @@ terraform {
   required_version = ">= 1.5.0"
 
   required_providers {
-    railway = {
-      # Railway Terraform Provider
-      # https://registry.terraform.io/providers/terraform-railway/railway
-      source  = "terraform-railway/railway"
-      version = "~> 0.3"
+    # Railway non ha un provider ufficiale stabile nel Terraform Registry.
+    # Usiamo 'null' + local-exec con la Railway CLI, che e' il metodo
+    # raccomandato per l'IaC su Railway.
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
-
-  # Optional: store state remotely (recommended for production)
-  # backend "s3" {
-  #   bucket = "your-tf-state-bucket"
-  #   key    = "trasparenza/terraform.tfstate"
-  #   region = "eu-central-1"
-  # }
 }
 
-provider "railway" {
-  # Set via RAILWAY_TOKEN env var or directly (not recommended):
-  # token = var.railway_token
-}
+# Il token viene passato via env var RAILWAY_TOKEN
+# oppure come TF_VAR_railway_token e usato nei local-exec tramite
+# la variabile terraform railway_token.
